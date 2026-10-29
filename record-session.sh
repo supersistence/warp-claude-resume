@@ -54,6 +54,7 @@ def s(k):
 print("sid=" + shlex.quote(s("session_id")))
 print("cwd=" + shlex.quote(s("cwd")))
 print("mode=" + shlex.quote(s("permission_mode")))
+print("src=" + shlex.quote(s("source")))
 ' 2>/dev/null)"
 fi
 
@@ -72,9 +73,20 @@ _first_json_string() {
 [ -n "$sid"  ] || sid="$(_first_json_string session_id)"
 [ -n "$cwd"  ] || cwd="$(_first_json_string cwd)"
 [ -n "$mode" ] || mode="$(_first_json_string permission_mode)"
+[ -n "${src:-}" ] || src="$(_first_json_string source)"
 
 [ -n "$sid" ] || exit 0
 [ -n "$cwd" ] || cwd="$PWD"
+
+# On compact, the payload's cwd is wherever Claude's shell has wandered (a
+# `cd` in a Bash tool call carries over), not the directory the session was
+# launched from. Resuming there later re-keys the session onto a different
+# project folder (new memory, new settings). Keep the cwd already on record
+# for this pane; only startup/resume/clear may set it.
+if [ "${src:-}" = compact ] && [ -r "${STATE_DIR}/${pane}" ]; then
+  old_cwd="$(cut -f2 "${STATE_DIR}/${pane}" 2>/dev/null)"
+  [ -n "$old_cwd" ] && cwd="$old_cwd"
+fi
 
 # session_id must look like a session id and nothing else -- this string is
 # later passed to `claude --resume`, so it must not be able to carry shell

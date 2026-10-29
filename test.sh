@@ -95,6 +95,22 @@ is "record has 4 tab-separated fields" \
    "$(awk -F'\t' '{print NF}' "$STATE/$PANE1")" "4"
 is "state dir is 0700" "$(ls -ld "$STATE" | cut -c2-10)" "rwx------"
 
+# SessionStart also fires on compact, and by then Claude's cwd may have drifted
+# (a `cd` in a Bash tool call carries over). Recording it re-keyed a resumed
+# session onto the wrong project folder (seen live, Oct 2026). Compact keeps
+# the pane's recorded cwd; startup/resume/clear still set it.
+echo; echo "recording: compact keeps the launch directory"
+hook "$PANE3" "{\"session_id\":\"sess-c\",\"cwd\":\"$PROJ\",\"source\":\"startup\"}"
+hook "$PANE3" "{\"session_id\":\"sess-c\",\"cwd\":\"$T/empty\",\"source\":\"compact\"}"
+is "compact does not overwrite cwd" "$(cut -f2 "$STATE/$PANE3")" "$PROJ"
+hook "$PANE3" "{\"session_id\":\"sess-d\",\"cwd\":\"$T/empty\",\"source\":\"resume\"}"
+is "resume sets cwd" "$(cut -f2 "$STATE/$PANE3")" "$T/empty"
+is "resume sets sid" "$(cut -f1 "$STATE/$PANE3")" "sess-d"
+rm -f "$STATE/$PANE3"
+hook "$PANE3" "{\"session_id\":\"sess-e\",\"cwd\":\"$PROJ\",\"source\":\"compact\"}"
+is "compact with no prior record writes normally" "$(cut -f2 "$STATE/$PANE3")" "$PROJ"
+rm -f "$STATE/$PANE3"
+
 # ------------------------------------------------- THE core requirement
 echo; echo "core: per-pane identity"
 o1=$(zrun "$PANE1" "WARP_CLAUDE_AUTO=1")

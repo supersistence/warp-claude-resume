@@ -158,6 +158,11 @@ transcripts after `cleanupPeriodDays` (default 30) — raise that in
 - Only panes restored from Warp's snapshot keep their UUID. Panes from a Tab
   Config or launch config, Warp's cloud agent panes, and SSH panes never resume.
 - `/clear` starts a new session; the pane follows whatever it last had.
+- The record keeps the directory the session was *launched* from. A `cd` in a
+  Bash tool call changes Claude's own cwd, and `SessionStart` fires again on
+  compact with that drifted cwd; recording it would resume the session under a
+  different project folder (new memory and settings). Compact only refreshes
+  the session id and timestamp.
 - Resuming `cd`s into the recorded directory, which fires `chpwd` hooks
   (direnv, zoxide). With `AUTO=1` that happens without a prompt; tools that
   require a per-directory allow are unaffected.
@@ -183,7 +188,7 @@ yourself:
 - **It writes exactly three things:** `~/.warp-claude/`, one hook entry in
   `~/.claude/settings.json`, and lines you add to `~/.zshrc`. It reads one
   more: the transcript in `~/.claude/projects/` for the session it offers.
-- **`bash test.sh`** — 86 checks in a temp dir that never touches `$HOME`,
+- **`bash test.sh`** — 90 checks in a temp dir that never touches `$HOME`,
   including the attacks below (record tampering, flag injection, `$(…)` in a
   directory name or transcript under `PROMPT_SUBST`, terminal escapes in a
   transcript, alias and `PATH` substitution).
