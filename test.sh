@@ -337,6 +337,11 @@ hasnt "last line omitted when it equals the title" "$o" "last:"
 o=$(dz sess-0002 "export PATH='$NOPY'")
 has   "without working python3, still shows age and size" "$o" "1 KB"
 
+# ------------------------------------------------------------------ OSC 7
+echo; echo "directory report"
+o=$(zsh -fc "source '$ZSHLIB'; HOST=h; _warp_claude_osc7 '/a b/100%/é'" | od -An -c | tr -d ' \n')
+is "OSC 7 path is percent-encoded byte by byte" "$o" '033]7;file://h/a%20b/100%25/%C3%A9\a'
+
 # ---------------------------------------------------------------- pty tests
 echo; echo "interactive (pty)"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import pty' 2>/dev/null; then
@@ -433,6 +438,9 @@ source '$ZSHLIB'"
   o=$(python3 "$T/ptyh.py" "$T/rcD/.zshrc" "$(printf '\n')" 2>&1)
   has "bare enter accepts" "$o" "CLAUDE argc"
   has "accepting cds into the recorded directory" "$o" "CLAUDE cwd=$PROJ"
+  # Warp's own precmd runs after ours, so without this report Warp never
+  # learns the pane's directory and restores it (and its file explorer) at ~.
+  has "accepting reports the directory to the terminal (OSC 7)" "$o" "]7;file://"
 else
   sk "interactive prompt tests" "python3 with pty module not available"
 fi

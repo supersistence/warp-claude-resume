@@ -183,7 +183,7 @@ yourself:
 - **It writes exactly three things:** `~/.warp-claude/`, one hook entry in
   `~/.claude/settings.json`, and lines you add to `~/.zshrc`. It reads one
   more: the transcript in `~/.claude/projects/` for the session it offers.
-- **`bash test.sh`** — 84 checks in a temp dir that never touches `$HOME`,
+- **`bash test.sh`** — 86 checks in a temp dir that never touches `$HOME`,
   including the attacks below (record tampering, flag injection, `$(…)` in a
   directory name or transcript under `PROMPT_SUBST`, terminal escapes in a
   transcript, alias and `PATH` substitution).

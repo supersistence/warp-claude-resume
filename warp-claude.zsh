@@ -262,6 +262,23 @@ PY
   return 0
 }
 
+# Report a directory to the terminal as the pane's cwd (OSC 7). The path is
+# percent-encoded byte by byte (no_multibyte), so nothing but [A-Za-z0-9/._~-]
+# and %XX ever reaches the terminal, whatever the path contains.
+_warp_claude_osc7() {
+  emulate -L zsh
+  setopt no_multibyte
+  local p=$1 out= c
+  integer i
+  for (( i = 1; i <= ${#p}; i++ )); do
+    c=$p[i]
+    if [[ $c == [A-Za-z0-9/._~-] ]]; then out+=$c
+    else out+=%${(l:2::0:)$(( [##16] #c ))}
+    fi
+  done
+  printf '\e]7;file://%s%s\a' "$HOST" "$out"
+}
+
 _warp_claude_reattach() {
   # Local option scope: correct under nounset, ksh_arrays, sh_word_split etc.
   emulate -L zsh
@@ -381,6 +398,13 @@ _warp_claude_reattach() {
     print -r -- "$cwd"
     return 0
   }
+
+  # Tell Warp where the pane is now. Warp registers its own precmd hook AFTER
+  # sourcing .zshrc, so it runs after this one -- i.e. not until claude exits.
+  # Without this Warp never hears the directory: the file explorer and new
+  # panes fall back to $HOME, and $HOME is what Warp saves as this pane's cwd
+  # for the next restart. Found on a live Warp, not by reading.
+  [[ -t 1 ]] && _warp_claude_osc7 "$PWD"
 
   local rc=0
   WARP_CLAUDE_ACTIVE=1 "$bin" "${extra_args[@]}" --resume "$sid" || rc=$?
