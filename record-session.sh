@@ -41,9 +41,24 @@ payload="$(cat)"
 sid=""
 cwd=""
 mode=""
-if command -v python3 >/dev/null 2>&1; then
-  eval "$(printf '%s' "$payload" | python3 -c '
+# Windows: `python3` may be the Microsoft Store stub, which exists on PATH but
+# only prints "Python was not found". Probe that an interpreter actually runs
+# before trusting it, and fall back to `python`.
+py=""
+for c in python3 python; do
+  if command -v "$c" >/dev/null 2>&1 && "$c" -I -c '' >/dev/null 2>&1; then
+    py="$c"; break
+  fi
+done
+parsed=""
+if [ -n "$py" ]; then
+  # -I: isolated mode, so nothing in the cwd can shadow json/shlex.
+  # PYTHONUTF8: Windows Python otherwise decodes stdin as cp1252.
+  # newline="\n": Windows text-mode stdout writes CRLF, and a trailing \r
+  # would end up inside every eval'd value.
+  eval "$(printf '%s' "$payload" | PYTHONUTF8=1 "$py" -I -c '
 import json, sys, shlex
+sys.stdout.reconfigure(newline="\n")
 try:
     d = json.load(sys.stdin)
 except Exception:
@@ -55,6 +70,7 @@ print("sid=" + shlex.quote(s("session_id")))
 print("cwd=" + shlex.quote(s("cwd")))
 print("mode=" + shlex.quote(s("permission_mode")))
 print("src=" + shlex.quote(s("source")))
+print("parsed=1")
 ' 2>/dev/null)"
 fi
 
@@ -71,12 +87,33 @@ _first_json_string() {
     | sed 's/.*"\([^"]*\)"$/\1/'
 }
 [ -n "$sid"  ] || sid="$(_first_json_string session_id)"
-[ -n "$cwd"  ] || cwd="$(_first_json_string cwd)"
+if [ -z "$cwd" ]; then
+  cwd="$(_first_json_string cwd)"
+  # The only JSON escape a Windows path normally carries is \\ for each
+  # separator. Collapse those; anything else stays literal and is caught by
+  # the checks below.
+  if [ -z "$parsed" ]; then
+    cwd="$(printf '%s' "$cwd" | sed 's/\\\\/\\/g')"
+  fi
+fi
 [ -n "$mode" ] || mode="$(_first_json_string permission_mode)"
 [ -n "${src:-}" ] || src="$(_first_json_string source)"
 
 [ -n "$sid" ] || exit 0
 [ -n "$cwd" ] || cwd="$PWD"
+
+# Windows (Git Bash / MSYS2): Claude Code reports cwd as C:\dev. Store the
+# POSIX form (/c/dev) so the shell side can `cd` to it and the absolute-path
+# check below means the same thing on every platform. No cygpath (not
+# MSYS) means a drive path stays as-is and is rejected below.
+case "$cwd" in
+  [A-Za-z]:[\\/]*|[A-Za-z]:)
+    if command -v cygpath >/dev/null 2>&1; then
+      cwd="$(cygpath -u -- "$cwd" 2>/dev/null)" || cwd=""
+    fi
+    ;;
+esac
+[ -n "$cwd" ] || exit 0
 
 # On compact, the payload's cwd is wherever Claude's shell has wandered (a
 # `cd` in a Bash tool call carries over), not the directory the session was

@@ -1,0 +1,7 @@
+# Shell scripts must stay LF: zsh, dash and WSL bash reject CR, and Windows
+# clones default to core.autocrlf=true. (Git Bash tolerates CR, which hides this.)
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.zsh   text eol=lf
+*.md    text eol=lf
+*.ps1   text eol=crlf
