@@ -31,9 +31,11 @@ you run `claude --resume` in them.
 ## Requirements
 
 - **Warp** with *Restore windows, tabs, and panes on startup* enabled
-- **zsh** (Warp's default on macOS). bash and fish are not supported.
+- **zsh** (Warp's default on macOS), or **Git Bash on Windows** — see
+  [Windows (Git Bash)](#windows-git-bash). fish is not supported.
 - **Claude Code** with `SessionStart` hook support
-- macOS or Linux. WSL should work but is untested. Panes over SSH never resume.
+- macOS, Linux, or Windows with Git Bash. WSL should work but is untested.
+  Panes over SSH never resume.
 
 ## Install
 
@@ -87,6 +89,81 @@ permissions bypassed and no prompt:
 # WARP_CLAUDE_RESUME_FLAGS=(--permission-mode bypassPermissions)  # mirror your usual claude flags
 # WARP_CLAUDE_AUTO=1                                              # resume without asking
 ```
+
+## Windows (Git Bash)
+
+Warp on Windows exports the same `WARP_TERMINAL_SESSION_UUID`, and a restored
+pane keeps it. `warp-claude.bash` is the bash port of the shell side; the hook
+is shared.
+
+```sh
+bash test-bash.sh                                              # optional, touches nothing in $HOME
+powershell -NoProfile -ExecutionPolicy Bypass -File test-reap.ps1   # optional
+mkdir -p ~/.warp-claude
+cp record-session.sh warp-claude.bash warp-claude-reap.ps1 ~/.warp-claude/
+```
+
+Hook entry in `~/.claude/settings.json` (Claude Code runs hooks through Git Bash):
+
+```json
+{ "hooks": { "SessionStart": [
+  { "hooks": [ { "type": "command", "command": "bash \"$HOME/.warp-claude/record-session.sh\"" } ] }
+] } }
+```
+
+Warp's Git Bash sources `~/.bash_profile`, not `~/.bashrc`. Make sure
+`~/.bash_profile` contains `test -f ~/.bashrc && . ~/.bashrc`, then in `~/.bashrc`:
+
+```sh
+# WARP_CLAUDE_RESUME_FLAGS=(--dangerously-skip-permissions --remote-control)
+# WARP_CLAUDE_AUTO=1
+# WARP_CLAUDE_STAGGER=3
+# WARP_CLAUDE_REAP_ORPHANS=1
+source ~/.warp-claude/warp-claude.bash
+```
+
+Same knobs and commands as zsh, plus:
+
+| Variable / command | Default | Meaning |
+|---|---|---|
+| `WARP_CLAUDE_STAGGER` | `3` | With `AUTO=1`, start restored panes this many seconds apart instead of all at once. `0` = no pacing. Ctrl-C during the wait skips that pane. |
+| `WARP_CLAUDE_REAP` | `1` | Before resuming, kill an orphaned copy of the same session (see below). `0` = off. |
+| `WARP_CLAUDE_REAP_ORPHANS` | `0` | `1` = when Warp starts, kill **every** orphaned Warp pane tree in the background (once per 60s across panes; report in `~/.warp-claude/reap.log`). Opt-in because it kills processes this tool didn't start. |
+| `warp-claude-reap` | | List every orphaned Warp pane process tree and offer to kill them (`-y` = no prompt; `--loose` = also leftovers of Warps that ran before this was installed — review that list first). |
+
+Windows-specific behaviour worth knowing:
+
+- **Ungraceful Warp exits leak processes.** If `warp.exe` crashes or is ended
+  from Task Manager, Windows does not kill the processes in its panes: every
+  pane's `bash` (and any `claude.exe` with its MCP servers) keeps running with no
+  terminal. A leaked `claude` still owns its session, so after a restart the
+  resumed copy and the orphan would both write the same transcript and both
+  appear in Remote Control. Before each resume, `warp-claude-reap.ps1` looks the
+  session up in Claude Code's `~/.claude/sessions/<pid>.json`, checks the PID's
+  start time (so a reused PID never matches), and kills that tree only if it is
+  rooted at Warp's `bash --noprofile --norc` **and that bash's dead parent was a
+  `warp.exe`**. Windows can't name a dead process, so the reaper remembers every
+  live Warp it sees (PID + start time, `~/.warp-claude/warp-instances`); a
+  background run at each Warp start makes sure every Warp gets remembered. The
+  parent check matters: MSYS2 children show their parent's command line, so a
+  job you backgrounded in a live tab (`( job & )`, `nohup`) also looks like an
+  orphaned `bash --noprofile --norc` — but its dead parent was a bash. The
+  reaper also never touches the tree it is itself running in. A copy open in a
+  live pane, VS Code or another terminal is never touched. Leaked
+  shells with no claude (one ~24 MB `bash` per pane, per ungraceful exit) are
+  left for `warp-claude-reap`, or swept on every Warp start with
+  `WARP_CLAUDE_REAP_ORPHANS=1`. `OpenConsole.exe` and claude's MCP `node`
+  processes did not leak in testing.
+- **Typing into a resumed claude.** The resume runs from bash-preexec's
+  `precmd`, before Warp's own hook, so Warp never learned a command had started
+  and kept keystrokes in its input editor. The bash side now replays Warp's
+  `warp_precmd` and a `Preexec` hook first. These are Warp's own bootstrap
+  functions; if a future Warp renames them, that step is skipped and you can
+  type via the rich-input toggle.
+- **Remote Control** (`remoteControlAtStartup`) did not reconnect resumed
+  sessions in testing; put `--remote-control` in `WARP_CLAUDE_RESUME_FLAGS`.
+- `python3` may be the Microsoft Store stub. Both scripts probe for an
+  interpreter that actually runs and fall back to `python`.
 
 ## Using it
 
